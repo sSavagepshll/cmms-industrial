@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="735" height="99" viewBox="0 0 735 99" role="img" aria-labelledby="t">
+  <title id="t">Apex Industrial Technologies</title>
+  <!-- Emblema: "A" de apice com barras inclinadas paralelas (eco do logotipo original) -->
+  <g fill="#d8e2ec">
+    <polygon points="0,99 22,99 57,0 35,0"/>
+    <polygon points="46,0 68,0 96,99 74,99"/>
+    <polygon points="30,99 44,99 57.8,60 43.8,60"/>
+  </g>
+  <polygon fill="#CF2426" points="50,99 70,99 60,76"/>
+  <!-- Tipografia -->
+  <text x="118" y="60" fill="#d8e2ec" font-family="'Arial Black','Helvetica Neue',Arial,Helvetica,sans-serif" font-weight="900" font-size="62" textLength="615" lengthAdjust="spacingAndGlyphs">APEX INDUSTRIAL</text>
+  <rect x="118" y="82" width="176" height="4" fill="#CF2426"/>
+  <text x="310" y="92" fill="#CF2426" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="22" letter-spacing="6" textLength="423" lengthAdjust="spacing">TECHNOLOGIES</text>
+</svg>

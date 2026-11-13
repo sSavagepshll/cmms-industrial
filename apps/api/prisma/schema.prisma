@@ -1,0 +1,493 @@
+// Espelha db/migrations/V001__tabelas_base.sql (fonte da verdade do DDL = migrations SQL).
+// Não use `prisma migrate`; após alterar o SQL rode `npm run prisma:pull` e revise.
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PerfilUsuario {
+  ADMIN
+  GERENTE
+  TECNICO
+  OPERADOR
+  LIDER_PRODUCAO
+
+  @@map("perfil_usuario")
+}
+
+enum StatusEquipamento {
+  ATIVO
+  INATIVO
+  EM_MANUTENCAO
+  DESCARTADO
+
+  @@map("status_equipamento")
+}
+
+enum TipoManutencao {
+  PREVENTIVA
+  CORRETIVA
+  PREDITIVA
+
+  @@map("tipo_manutencao")
+}
+
+enum PrioridadeOrdem {
+  BAIXA
+  MEDIA
+  ALTA
+  CRITICA
+
+  @@map("prioridade_ordem")
+}
+
+enum StatusOrdem {
+  ABERTA
+  RESERVADA
+  EM_ANDAMENTO
+  PAUSADA
+  AGUARDANDO_PECA
+  AGUARDANDO_APROVACAO
+  AGUARDANDO_BAIXA
+  CONCLUIDA
+  CANCELADA
+
+  @@map("status_ordem")
+}
+
+enum TipoAtivo {
+  MOLDE
+  MAQUINA
+  ROBO
+  OUTRO
+
+  @@map("tipo_ativo")
+}
+
+enum TipoCusto {
+  INTERNO
+  CLIENTE
+
+  @@map("tipo_custo")
+}
+
+enum ApontamentoOrigem {
+  CRONOMETRO
+  RETROATIVO
+
+  @@map("apontamento_origem")
+}
+
+model Usuario {
+  id           BigInt        @id @default(autoincrement())
+  nome         String        @db.VarChar(150)
+  email        String?       @db.VarChar(254)
+  senhaHash    String?       @map("senha_hash") @db.VarChar(255)
+  perfil       PerfilUsuario @default(OPERADOR)
+  ativo        Boolean       @default(true)
+  matricula    String?       @unique(map: "ux_usuarios_matricula") @db.VarChar(30)
+  pinHash      String?       @map("pin_hash") @db.VarChar(255)
+  criadoEm     DateTime      @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm DateTime      @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  ordensSolicitadas Ordem[] @relation("Solicitante")
+  ordensResponsavel Ordem[] @relation("Responsavel")
+  ordensAprovadas   Ordem[] @relation("Aprovador")
+  ordensConcluidas  Ordem[] @relation("Concluidor")
+  ordensDelegadas   Ordem[] @relation("Delegador")
+  ordensAprovadasEmNomeDe Ordem[] @relation("AprovadoEmNomeDe")
+  auditoriaComoAtor     Auditoria[] @relation("AuditoriaAtor")
+  auditoriaEmNomeDe     Auditoria[] @relation("AuditoriaEmNomeDe")
+  notas             OrdemNota[]
+  historicoStatus   HistoricoStatusOrdem[]
+  apontamentos      OmApontamentoTempo[]
+  apontamentosExcluidos OmApontamentoTempo[] @relation("ApontamentoExcluidoPor")
+  materiais                OmMaterialUtilizado[]
+  configuracoesAtualizadas ConfiguracaoGlobal[] @relation("ConfigAtualizacao")
+
+  @@map("usuarios")
+}
+
+model Equipamento {
+  id            BigInt            @id @default(autoincrement())
+  codigo        String            @unique(map: "ux_equipamentos_codigo") @db.VarChar(50)
+  nome          String            @db.VarChar(150)
+  descricao     String?
+  fabricante    String?           @db.VarChar(100)
+  modelo        String?           @db.VarChar(100)
+  numeroSerie   String?           @map("numero_serie") @db.VarChar(100)
+  localizacao   String?           @db.VarChar(150)
+  setor         String            @db.VarChar(100)
+  dataAquisicao DateTime?         @map("data_aquisicao") @db.Date
+  status        StatusEquipamento @default(ATIVO)
+  predial       Boolean           @default(false)
+  itemLivre     Boolean           @default(false) @map("item_livre")
+  // Fase 22: NOT NULL no banco, mas o trigger fn_equipamentos_valida_setor resolve o id a partir do texto `setor` em INSERTs
+  // legados; por isso fica opcional aqui (o Prisma nao exige informar). `setor` (texto) e DERIVADO de setores.nome: a API nunca o grava.
+  setorId       BigInt?           @map("setor_id")
+  // Fase 30 / US-15: NOT NULL no banco, mas o trigger fn_equipamentos_valida_grupo atribui default (PRODUTIVOS ou MOLDES_PREDIAL se predial)
+  // em INSERTs que omitam o grupo; por isso fica opcional aqui no Prisma.
+  grupoId       BigInt?           @map("grupo_id")
+  criadoEm      DateTime          @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm  DateTime          @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  setorRef Setor?      @relation(fields: [setorId], references: [id], onDelete: Restrict)
+  grupo    GrupoAtivo? @relation(fields: [grupoId], references: [id], onDelete: Restrict)
+  ordens   Ordem[]
+
+  @@index([status], map: "ix_equipamentos_status")
+  @@index([setor], map: "ix_equipamentos_setor")
+  @@index([predial], map: "ix_equipamentos_predial")
+  @@index([itemLivre], map: "ux_equipamentos_item_livre")
+  @@index([setorId], map: "ix_equipamentos_setor_id")
+  @@index([grupoId], map: "ix_equipamentos_grupo_id")
+  @@map("equipamentos")
+}
+
+// Fase 22: cadastro de setores. predial=true e o setor "Outros" (unico, protegido, renomeavel). Unicidade: indices ux_setores_nome (lower(nome)) e ux_setores_predial.
+// Fase 37: oficial=true define o catalogo oficial de 10 setores para selecao no cadastro de equipamentos.
+model Setor {
+  id           BigInt   @id @default(autoincrement())
+  nome         String   @db.VarChar(100)
+  ativo        Boolean  @default(true)
+  predial      Boolean  @default(false)
+  oficial      Boolean  @default(false)
+  ordem        Int      @default(0)
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm DateTime @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  equipamentos Equipamento[]
+  locais       SetorLocal[]
+
+  @@index([ordem, nome], map: "ix_setores_catalogo")
+  @@map("setores")
+}
+
+// Fase 22: locais padrao do setor predial (chips do Totem). A OM guarda so o texto (local_descricao), sem FK.
+model SetorLocal {
+  id           BigInt   @id @default(autoincrement())
+  setorId      BigInt   @map("setor_id")
+  nome         String   @db.VarChar(60)
+  ativo        Boolean  @default(true)
+  ordem        Int      @default(0)
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm DateTime @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  setor Setor @relation(fields: [setorId], references: [id], onDelete: Cascade)
+
+  @@index([setorId, ordem], map: "ix_setor_locais_setor")
+  @@map("setor_locais")
+}
+
+// Fase 30 / US-15: taxonomia em 4 macro-categorias de ativos para navegacao no Totem. Conjunto fixo de 4 categorias.
+// Fase 35: MOLDES_PREDIAL -> MOLDES, OUTROS -> PREDIAL_OUTROS (reservado a predial e item livre).
+model GrupoAtivo {
+  id           BigInt   @id @default(autoincrement())
+  codigo       String   @unique(map: "grupos_ativos_codigo_key") @db.VarChar(20)
+  nome         String   @db.VarChar(60)
+  ordem        Int      @default(0)
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm DateTime @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  equipamentos Equipamento[]
+
+  @@map("grupos_ativos")
+}
+
+model Ordem {
+  id            BigInt          @id @default(autoincrement())
+  equipamentoId BigInt          @map("equipamento_id")
+  solicitanteId BigInt          @map("solicitante_id")
+  responsavelId BigInt?         @map("responsavel_id")
+  tipo          TipoManutencao  @default(CORRETIVA)
+  prioridade    PrioridadeOrdem @default(MEDIA)
+  status        StatusOrdem     @default(ABERTA)
+  titulo        String          @db.VarChar(200)
+  descricao     String?
+  solucao       String?
+  // Preenchidos pelo banco quando omitidos: categoria DEFAULT 'OUTROS'; numero_formatado via trigger
+  // trg_ordens_numero_formatado (coluna NOT NULL sem DEFAULT, por isso dbgenerated para omitir no INSERT).
+  motivoPausa     String?       @map("motivo_pausa")
+  // V006: aprovação de supervisão (AGUARDANDO_APROVACAO -> CONCLUIDA, ou reprovação -> EM_ANDAMENTO)
+  aprovadoPor      BigInt?   @map("aprovado_por")
+  dataAprovacao    DateTime? @map("data_aprovacao") @db.Timestamptz(6)
+  concluidoPor     BigInt?   @map("concluido_por")
+  concluidoEm      DateTime? @map("concluido_em") @db.Timestamptz(6)
+  motivoReprovacao String?   @map("motivo_reprovacao")
+  // V010: reserva, recusa e SLAs (fallbacks)
+  motivoRecusa     String?       @map("motivo_recusa")
+  prazoAtendimento DateTime?     @map("prazo_atendimento") @db.Timestamptz(6)
+  prazoAprovacao   DateTime?     @map("prazo_aprovacao") @db.Timestamptz(6)
+  // V011: delegação (quem/quando), alerta único do fallback e aprovação em nome do operador
+  delegadoPor         BigInt?   @map("delegado_por")
+  delegadoEm          DateTime? @map("delegado_em") @db.Timestamptz(6)
+  fallbackAlertadoEm  DateTime? @map("fallback_alertado_em") @db.Timestamptz(6)
+  reservaAvisoEm      DateTime? @map("reserva_aviso_em") @db.Timestamptz(6) // V016: aviso prévio da reserva (1 por delegação)
+  aprovadoEmNomeDe    BigInt?   @map("aprovado_em_nome_de")
+  // V005: ficha física
+  tipoAtivo       TipoAtivo?    @map("tipo_ativo")
+  tipoAtivoOutro  String?       @map("tipo_ativo_outro") @db.VarChar(30)
+  localDescricao  String?       @map("local_descricao") @db.VarChar(100)
+  itemDescricao   String?       @map("item_descricao") @db.VarChar(100)
+  centroCusto     String?       @map("centro_custo") @db.VarChar(50)
+  custoTipo       TipoCusto?    @map("tipo_custo")
+  totemIdOrigem   String?       @map("totem_id_origem") @db.VarChar(50)
+  categoria       String        @default("OUTROS") @db.VarChar(50)
+  sintomas        String?
+  numeroFormatado String        @unique(map: "ux_ordens_numero_formatado") @default(dbgenerated()) @map("numero_formatado") @db.VarChar(30)
+  dataAbertura  DateTime        @default(now()) @map("data_abertura") @db.Timestamptz(6)
+  dataPrevista  DateTime?       @map("data_prevista") @db.Timestamptz(6)
+  dataInicio    DateTime?       @map("data_inicio") @db.Timestamptz(6)
+  dataConclusao DateTime?       @map("data_conclusao") @db.Timestamptz(6)
+  // V025: colunas materializadas de tempos de atendimento e reparo liquido (segundos)
+  tempoAtendimentoSeg Float?      @map("tempo_atendimento_seg")
+  tempoReparoSeg      Float?      @map("tempo_reparo_seg")
+  criadoEm      DateTime        @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm  DateTime        @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  equipamento Equipamento @relation(fields: [equipamentoId], references: [id], onDelete: Restrict)
+  solicitante Usuario     @relation("Solicitante", fields: [solicitanteId], references: [id], onDelete: Restrict)
+  notas       OrdemNota[]
+  historico   HistoricoStatusOrdem[]
+  testesQualidade OmTesteQualidade[]
+  testesProducao  OmTesteProducao[]
+  apontamentos OmApontamentoTempo[]
+  materiais    OmMaterialUtilizado[]
+  responsavel Usuario?    @relation("Responsavel", fields: [responsavelId], references: [id], onDelete: Restrict)
+  aprovador   Usuario?    @relation("Aprovador", fields: [aprovadoPor], references: [id], onDelete: Restrict)
+  concluidor  Usuario?    @relation("Concluidor", fields: [concluidoPor], references: [id], onDelete: Restrict)
+  delegador   Usuario?    @relation("Delegador", fields: [delegadoPor], references: [id], onDelete: Restrict)
+  aprovadoEmNomeDeUsuario Usuario? @relation("AprovadoEmNomeDe", fields: [aprovadoEmNomeDe], references: [id], onDelete: Restrict)
+  outboxEmails            OutboxEmail[]
+  outboxAnexos            OutboxAnexo[]
+
+  @@index([equipamentoId], map: "ix_ordens_equipamento")
+  @@index([aprovadoPor], map: "ix_ordens_aprovado_por")
+  @@index([concluidoPor], map: "ix_ordens_concluido_por")
+  @@index([dataAprovacao], map: "ix_ordens_aguardando_baixa")
+  @@index([solicitanteId], map: "ix_ordens_solicitante")
+  @@index([categoria], map: "ix_ordens_categoria")
+  @@index([itemDescricao], map: "ix_ordens_item_descricao")
+  @@map("ordens_manutencao")
+}
+
+// V003 (db/migrations/V003__tabelas_tecnico.sql)
+model OrdemNota {
+  id           BigInt   @id @default(autoincrement())
+  ordemId      BigInt   @map("ordem_id")
+  autorId      BigInt   @map("autor_id")
+  nota         String
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm DateTime @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  ordem Ordem   @relation(fields: [ordemId], references: [id], onDelete: Cascade)
+  autor Usuario @relation(fields: [autorId], references: [id], onDelete: Restrict)
+
+  @@index([ordemId, criadoEm], map: "ix_ordens_notas_ordem")
+  @@index([autorId], map: "ix_ordens_notas_autor")
+  @@map("ordens_notas")
+}
+
+// Cada play abre uma linha (fim NULL); pause/conclusão preenche fim. Índice único parcial no banco
+// (ux_apontamentos_aberto_tecnico) garante 1 cronômetro aberto por técnico (RN-09).
+model OmApontamentoTempo {
+  id           BigInt    @id @default(autoincrement())
+  ordemId      BigInt    @map("ordem_id")
+  tecnicoId    BigInt    @map("tecnico_id")
+  inicio       DateTime  @default(now()) @db.Timestamptz(6)
+  fim          DateTime? @db.Timestamptz(6)
+  // V007: origem do lançamento e exclusão lógica (só RETROATIVO pode ser excluído)
+  origem         ApontamentoOrigem @default(CRONOMETRO)
+  justificativa  String?
+  deletadoEm     DateTime?         @map("deletado_em") @db.Timestamptz(6)
+  deletadoPor    BigInt?           @map("deletado_por")
+  motivoExclusao String?           @map("motivo_exclusao")
+  criadoEm     DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm DateTime  @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  ordem   Ordem   @relation(fields: [ordemId], references: [id], onDelete: Cascade)
+  tecnico Usuario @relation(fields: [tecnicoId], references: [id], onDelete: Restrict)
+  excluidoPor Usuario? @relation("ApontamentoExcluidoPor", fields: [deletadoPor], references: [id], onDelete: Restrict)
+
+  @@index([ordemId, inicio], map: "ix_apontamentos_ordem")
+  @@index([tecnicoId, inicio], map: "ix_apontamentos_tecnico")
+  @@map("om_apontamentos_tempo")
+}
+
+model OmMaterialUtilizado {
+  id            BigInt   @id @default(autoincrement())
+  ordemId       BigInt   @map("ordem_id")
+  registradoPor BigInt   @map("registrado_por")
+  codigo        String?  @db.VarChar(50)
+  descricao     String   @db.VarChar(200)
+  quantidade    Decimal  @db.Decimal(12, 3)
+  unidade       String   @default("UN") @db.VarChar(10)
+  custoUnitario Decimal? @map("custo_unitario") @db.Decimal(12, 2)
+  flagInterno   Boolean  @default(true) @map("flag_interno") // V005
+  confNf        String?  @map("conf_nf") @db.VarChar(50)      // V005
+  criadoEm      DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm  DateTime @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  ordem     Ordem   @relation(fields: [ordemId], references: [id], onDelete: Cascade)
+  registrou Usuario @relation(fields: [registradoPor], references: [id], onDelete: Restrict)
+
+  @@index([ordemId], map: "ix_materiais_ordem")
+  @@map("om_materiais_utilizados")
+}
+
+// V004: preenchido por trigger (trg_ordens_historico_*). A API só precisa definir app.usuario_id na transação.
+model HistoricoStatusOrdem {
+  id             BigInt       @id @default(autoincrement())
+  ordemId        BigInt       @map("ordem_id")
+  statusAnterior StatusOrdem? @map("status_anterior")
+  statusNovo     StatusOrdem  @map("status_novo")
+  usuarioId      BigInt?      @map("usuario_id")
+  motivo         String?
+  criadoEm       DateTime     @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  ordem   Ordem    @relation(fields: [ordemId], references: [id], onDelete: Cascade)
+  usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([ordemId, criadoEm], map: "ix_historico_ordem")
+  @@index([ordemId, statusNovo], map: "idx_historico_ordem_cobridor")
+  @@map("historico_status_ordem")
+}
+
+// V005: ficha física. tempo_total (coluna gerada, INTERVAL) fica fora do model: a API calcula final - inicio.
+model OmTesteQualidade {
+  id               BigInt    @id @default(autoincrement())
+  ordemId          BigInt    @map("ordem_id")
+  testeSn          Boolean   @default(false) @map("teste_sn")
+  dataHora         DateTime? @map("data_hora") @db.Timestamptz(6)
+  programacao      String?
+  aprovadoSn       Boolean?  @map("aprovado_sn")
+  dataHoraAprov    DateTime? @map("data_hora_aprov") @db.Timestamptz(6)
+  cienteExecutante Boolean   @default(false) @map("ciente_executante")
+  criadoEm         DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm     DateTime  @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  ordem Ordem @relation(fields: [ordemId], references: [id], onDelete: Cascade)
+
+  @@index([ordemId], map: "ix_tq_ordem")
+  @@map("om_testes_qualidade")
+}
+
+model OmTesteProducao {
+  id           BigInt    @id @default(autoincrement())
+  ordemId      BigInt    @map("ordem_id")
+  recebido     DateTime? @db.Timestamptz(6)
+  inicio       DateTime? @db.Timestamptz(6)
+  final        DateTime? @db.Timestamptz(6)
+  devolvido    DateTime? @db.Timestamptz(6)
+  criadoEm     DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm DateTime  @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  ordem Ordem @relation(fields: [ordemId], references: [id], onDelete: Cascade)
+
+  @@index([ordemId], map: "ix_tp_ordem")
+  @@map("om_testes_producao")
+}
+
+model ConfiguracaoGlobal {
+  chave         String   @id @db.VarChar(100)
+  valor         String?  @db.Text
+  tipo          String   @default("TEXTO") @db.VarChar(20)
+  grupo         String   @default("GERAL") @db.VarChar(50)
+  descricao     String?  @db.Text
+  atualizadoPor BigInt?  @map("atualizado_por")
+  atualizadoEm  DateTime @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  usuarioAtualizacao Usuario? @relation("ConfigAtualizacao", fields: [atualizadoPor], references: [id], onDelete: Restrict)
+
+  @@map("configuracoes_globais")
+}
+
+// V011: trilha de auditoria (RN-25). Imutável no banco. `detalhe` NUNCA recebe PIN, senha ou valor de segredo.
+model Auditoria {
+  id         BigInt   @default(autoincrement())
+  criadoEm   DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atorId     BigInt?  @map("ator_id")
+  atorPerfil String?  @map("ator_perfil") @db.VarChar(30)
+  acao       String   @db.VarChar(50)
+  alvoTipo   String   @map("alvo_tipo") @db.VarChar(30)
+  alvoId     String   @map("alvo_id") @db.VarChar(100)
+  emNomeDe   BigInt?  @map("em_nome_de")
+  detalhe    Json?
+
+  ator             Usuario? @relation("AuditoriaAtor", fields: [atorId], references: [id], onDelete: Restrict)
+  emNomeDeUsuario  Usuario? @relation("AuditoriaEmNomeDe", fields: [emNomeDe], references: [id], onDelete: Restrict)
+
+  @@index([criadoEm(sort: Desc)], map: "ix_auditoria_data")
+  @@index([acao, criadoEm(sort: Desc)], map: "ix_auditoria_acao")
+  @@index([alvoTipo, alvoId], map: "ix_auditoria_alvo")
+  @@id([id, criadoEm])
+  @@index([atorId, criadoEm(sort: Desc)], map: "ix_auditoria_ator")
+  @@map("auditoria")
+}
+
+
+// V024: outbox transacional de e-mails com LISTEN/NOTIFY (Fase 34 / Ideia 4).
+model OutboxEmail {
+  id                 BigInt    @id @default(autoincrement())
+  tipo               String    @db.Text
+  ordemId            BigInt?   @map("ordem_id")
+  destinatarioEmail  String    @map("destinatario_email") @db.Text
+  assunto            String    @db.Text
+  corpoTexto         String    @map("corpo_texto") @db.Text
+  corpoHtml          String    @map("corpo_html") @db.Text
+  chaveDedupe        String?   @unique(map: "ux_outbox_email_dedupe") @map("chave_dedupe") @db.Text
+  status             String    @default("PENDENTE") @db.Text
+  tentativas         Int       @default(0) @db.SmallInt
+  maxTentativas      Int       @default(6) @map("max_tentativas") @db.SmallInt
+  proximaTentativaEm DateTime  @default(now()) @map("proxima_tentativa_em") @db.Timestamptz(6)
+  bloqueadoPor       String?   @map("bloqueado_por") @db.Text
+  bloqueadoAte       DateTime? @map("bloqueado_ate") @db.Timestamptz(6)
+  ultimoErro         String?   @map("ultimo_erro") @db.Text
+  messageId          String?   @map("message_id") @db.Text
+  respostaSmtp       String?   @map("resposta_smtp") @db.Text
+  reqId              String?   @map("req_id") @db.Text
+  enviadoEm          DateTime? @map("enviado_em") @db.Timestamptz(6)
+  criadoEm           DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm       DateTime  @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+  anexoId            BigInt?   @map("anexo_id")
+
+  ordem Ordem? @relation(fields: [ordemId], references: [id], onDelete: Restrict)
+  anexo OutboxAnexo? @relation(fields: [anexoId], references: [id], onDelete: Restrict)
+
+  @@index([proximaTentativaEm, id], map: "ix_outbox_email_fila")
+  @@index([bloqueadoAte], map: "ix_outbox_email_lease")
+  @@index([atualizadoEm], map: "ix_outbox_email_expurgo")
+  @@index([ordemId], map: "ix_outbox_email_ordem")
+  @@index([anexoId], map: "ix_outbox_email_anexo")
+  @@map("outbox_email")
+}
+
+// Fase 35: snapshots de fichas de OM (inicial/final) compartilhados pelos e-mails do evento.
+model OutboxAnexo {
+  id             BigInt   @id @default(autoincrement())
+  ordemId        BigInt   @map("ordem_id")
+  tipoDocumento  String   @map("tipo_documento") @db.Text
+  snapshotVersao Int      @default(1) @map("snapshot_versao") @db.SmallInt
+  snapshot       Json
+  criadoEm       DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  ordem  Ordem         @relation(fields: [ordemId], references: [id], onDelete: Restrict)
+  emails OutboxEmail[]
+
+  @@unique([ordemId, tipoDocumento], map: "ux_outbox_anexo_ordem_tipo")
+  @@map("outbox_anexo")
+}
+
+// Fase 39: controle atômico de sequências anuais de numeração de OMs (OM-AAAA-NNNNNN).
+model OmSequenciaAnual {
+  ano          Int      @id
+  ultimoNumero Int      @default(0) @map("ultimo_numero")
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm DateTime @default(now()) @map("atualizado_em") @db.Timestamptz(6)
+
+  @@map("om_sequencias_anuais")
+}

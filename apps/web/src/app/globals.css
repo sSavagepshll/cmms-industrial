@@ -1,0 +1,261 @@
+@import "tailwindcss";
+@config "../../tailwind.config.ts"; /* tema Apex Industrial Technologies */
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  /* Fase 33 / US-18: alvos de toque FLUIDOS (docs/ui/responsividade-us18.md §3). Mesmos nomes de classe (min-h-tap-*), mas escalam com a ALTURA
+     útil (vh): 1366x768 fica no piso, 1080x1920 chega perto do teto. Usar: min-h-tap-md, min-w-tap-md... */
+  --spacing-tap-min: 44px; /* piso WCAG (admin, mouse) */
+  --spacing-tap-sm: clamp(3.5rem, 2.6rem + 3vh, 4.5rem); /* chips: 56 -> 72 */
+  --spacing-tap-md: clamp(3.5rem, 2.4rem + 4vh, 5rem); /* secundário / teclas: 56 -> 80 */
+  --spacing-tap-lg: clamp(4rem, 2.6rem + 5vh, 6rem); /* primário: 64 -> 96 */
+  /* Tipografia fluida (corpo nunca < 16 px, RN-62) */
+  --text-body: clamp(1rem, 0.9rem + 0.5vw, 1.25rem);
+  --text-lead: clamp(1.125rem, 1rem + 0.7vw, 1.5rem);
+  --text-title: clamp(1.5rem, 1.1rem + 1.8vw, 2.5rem);
+  --text-hero: clamp(2rem, 1.2rem + 3.5vw, 4rem);
+  --text-tv: clamp(1.25rem, 0.6rem + 1.3vw, 2rem);
+  --spacing-gutter: clamp(0.75rem, 0.4rem + 1.6vw, 2rem);
+  --container-leitura: 40rem; /* formulários (640 px) */
+  --container-app: 100rem; /* 1600 px: Admin, Dashboard, Kanban */
+  --breakpoint-3xl: 120rem; /* TV / Full HD */
+
+  /* Fase 34 / Etapa 3 (docs/ui/primitivos-e-stepper-totem.md §1): forma, contorno, espaço, modal e movimento. Só tokens novos de forma. */
+  --radius-ctrl: 0.75rem; /* 12: botão compacto, campo, chip */
+  --radius-card: 1.25rem; /* 20: card, botão Totem */
+  --radius-sheet: 1.5rem; /* 24: modal, bottom sheet */
+  --ring-repouso: 1px; /* card estático, botão secundário */
+  --ring-destaque: 2px; /* card interativo, selecionado no Admin */
+  --ring-totem: 4px; /* alvo de luva: ação e seleção no Totem */
+  --spacing-card-sm: clamp(0.75rem, 0.5rem + 0.8vw, 1rem);
+  --spacing-card-md: clamp(1rem, 0.6rem + 1.2vw, 1.5rem);
+  --spacing-card-lg: clamp(1.25rem, 0.8rem + 1.8vw, 2rem);
+  --container-modal-sm: 28rem; /* confirmação */
+  --container-modal-md: 36rem; /* formulário curto, PIN */
+  --container-modal-lg: 48rem; /* lista, atribuição */
+  --ease-saida: cubic-bezier(0.2, 0, 0, 1);
+  --duration-rapida: 120ms;
+  --duration-media: 220ms;
+}
+/* Eixos de altura: o problema real é altura baixa (notebook 768, celular em paisagem) e o Totem vertical 1080x1920. */
+@custom-variant short (@media (max-height: 800px));
+@custom-variant tall (@media (min-height: 1700px));
+@utility min-h-vp { min-height: 100vh; min-height: 100dvh; }
+@utility safe-b { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+
+/* ===== Tema (docs/ux/fase17-tema-escuro.md) =====
+   Claro = :root. Escuro = :root[data-theme="dark"], definido por script no <head> (sem flash) conforme a preferência
+   Auto/Claro/Escuro. O bloco @media abaixo repete o escuro para o modo Auto quando o JS não rodou. A ficha impressa
+   sai SEMPRE clara: o escuro fica fora de @media print. A troca de tema não anima (nenhuma transição de cor). */
+:root,
+.tema-claro {
+  color-scheme: light;
+  --c-ink: #edf1fa; --c-panel: #ffffff; --c-panel-2: #ffffff;
+  --c-fg: #0a1440; --c-muted: #3a4a7c; --c-line: #7083c2; --c-line-soft: #cbd5ee; --c-scrim: rgb(9 19 54 / 0.70);
+  --c-primary: #1438a3; --c-on-primary: #ffffff; --c-primary-edge: #bccbf3; --c-primary-fg: #112e86;
+  --c-primary-soft: #dbe4f9; --c-primary-soft-fg: #0f266b; --c-strong: #091336; --c-on-strong: #ffffff;
+  --c-danger-fg: #b91c1c; --c-danger-soft: #fee2e2; --c-danger-soft-fg: #7f1d1d;
+  --c-ok-fg: #15803d; --c-ok-soft: #dcfce7; --c-ok-soft-fg: #14532d;
+  --c-warn-fg: #92400e; --c-warn-soft: #fef3c7; --c-warn-soft-fg: #78350f;
+  --c-info-soft: #e0f2fe; --c-info-soft-fg: #0c4a6e;
+  --c-accent: #cf2426;
+  --color-brand-50: #eef2fc; --color-brand-100: #dbe4f9; --color-brand-200: #bccbf3; --color-brand-300: #8fa6e9;
+  --color-brand-400: #5c78d8; --color-brand-500: #3555c0; --color-brand-600: #1438a3; --color-brand-700: #112e86;
+  --color-brand-800: #0f266b; --color-brand-900: #0d1f53; --color-brand-950: #091336;
+  /* gráficos (docs/ux/fase17-dashboard-paleta.md §6): paleta categórica validada + rampa ordinal + cromo */
+  --viz-1: #3555c0; --viz-2: #eb6834; --viz-3: #1baf7a; --viz-4: #eda100; --viz-5: #e87ba4; --viz-6: #008300; --viz-7: #4a3aa7; --viz-8: #e34948;
+  --viz-ord-1: #8fa6e9; --viz-ord-2: #5c78d8; --viz-ord-3: #3555c0; --viz-ord-4: #112e86;
+  --viz-track: #dbe4f9; --viz-grid: #cbd5ee; --viz-axis: var(--c-line); --viz-warn-mark: #92400e;
+  /* Visão executiva (docs/ux/fase18-dashboard-executivo.md §6): fatia "Outros" e zona de atenção do velocímetro */
+  --viz-outros: #7c86a6; --viz-zona-atencao: #b45309;
+}
+/* ficha-claro */
+/* Escopo SEMPRE CLARO (réplica de papel da ficha da OM): devolve às tintas do Tailwind os valores do tema claro, lidos do
+   CSS compilado, e os tokens claros (via ":root, .tema-claro" acima). Dentro dele nada muda com o tema escuro. */
+.tema-claro {
+  --color-red-50: #fef2f2; --color-red-100: #ffe2e2; --color-red-800: #9f0712; --color-red-900: #82181a;
+  --color-green-50: #f0fdf4; --color-green-100: #dcfce7; --color-green-800: #016630; --color-green-900: #0d542b;
+  --color-amber-50: #fffbeb; --color-amber-100: #fef3c6; --color-amber-700: #b75000; --color-amber-800: #953d00; --color-amber-900: #7b3306;
+  --color-slate-50: #f8fafc; --color-slate-100: #f1f5f9; --color-slate-200: #e2e8f0; --color-slate-600: #45556c; --color-slate-700: #314158; --color-slate-800: #1d293d; --color-slate-900: #0f172b;
+  --color-sky-100: #dff2fe; --color-sky-900: #024a70;
+  --color-yellow-50: #fefce8; --color-yellow-900: #733e0a;
+}
+/* ficha-claro */
+@media not print {
+  :root[data-theme="dark"] {
+  color-scheme: dark;
+  /* superfícies, texto, linhas (§2.1) */
+  --c-ink: #0a1226; --c-panel: #131d38; --c-panel-2: #1b2750;
+  --c-fg: #eef2fb; --c-muted: #a9b6da; --c-line: #7083bf; --c-line-soft: #2a3a6b; --c-scrim: rgb(3 7 18 / 0.80);
+  /* marca e ação (§2.2) */
+  --c-primary: #3555c0; --c-on-primary: #ffffff; --c-primary-edge: #8fa6e9; --c-primary-fg: #9db4f5;
+  --c-primary-soft: #1a2a5e; --c-primary-soft-fg: #c9d6fb; --c-strong: #26356f; --c-on-strong: #eef2fb;
+  /* estado (§2.3) */
+  --c-danger-fg: #ffb4b4; --c-danger-soft: #3a1217; --c-danger-soft-fg: #ffc9c9;
+  --c-ok-fg: #8ee8ae; --c-ok-soft: #0f2e1c; --c-ok-soft-fg: #a7f0c0;
+  --c-warn-fg: #fcd34d; --c-warn-soft: #3a2a08; --c-warn-soft-fg: #fcd98a;
+  --c-info-soft: #0c2a40; --c-info-soft-fg: #b6e1fb;
+  --c-accent: #e5383b; /* vermelho da marca: só identidade (filete do logo) */
+  /* escala brand: só os tons de fundo suave, texto sobre eles e sólidos levantados (§4.2) */
+  --color-brand-50: #14204a; --color-brand-100: #1a2a5e; --color-brand-200: #24397a;
+  --color-brand-600: #3555c0; --color-brand-700: #2d49a8; --color-brand-800: #c9d6fb; --color-brand-900: #dbe4f9;
+  /* tintas do Tailwind usadas como fundo suave / texto sobre fundo suave (§4.2). Sólidos (red-700, green-700,
+     amber-500, orange-500, yellow-400, slate-500) NÃO se redefinem. */
+  --color-red-50: #2a0f13; --color-red-100: #3a1217; --color-red-200: #5a1c22; --color-red-800: #ffc9c9; --color-red-900: #ffdcdc;
+  --color-green-50: #0b2416; --color-green-100: #0f2e1c; --color-green-200: #174a2c; --color-green-800: #a7f0c0; --color-green-900: #c7f7d9;
+  --color-amber-50: #2b1e05; --color-amber-100: #3a2a08; --color-amber-200: #5a400c; --color-amber-700: #fcd34d; --color-amber-800: #fcd98a; --color-amber-900: #fde7b0;
+  --color-slate-50: #172346; --color-slate-100: #1b2750; --color-slate-200: #26356a; --color-slate-600: #b8c4e4; --color-slate-700: #c9d3ee; --color-slate-800: #dbe3f6; --color-slate-900: #eef2fb;
+  --color-sky-100: #0c2a40; --color-sky-900: #b6e1fb;
+  --color-yellow-50: #2b2305; --color-yellow-100: #3a2d06; --color-yellow-900: #fde68a; /* v1.1: yellow-400 (aro) e yellow-500 (sólido) NÃO mudam */
+  --viz-1: #5c78d8; --viz-2: #d95926; --viz-3: #199e70; --viz-4: #c98500; --viz-5: #d55181; --viz-6: #008300; --viz-7: #9085e9; --viz-8: #e66767;
+  --viz-ord-1: #3555c0; --viz-ord-2: #5c78d8; --viz-ord-3: #8fa6e9; --viz-ord-4: #dbe4f9;
+  --viz-track: #1b2750; --viz-grid: #2a3a6b; --viz-warn-mark: #fcd34d;
+  --viz-outros: #8792b8; --viz-zona-atencao: #fcd34d;
+  }
+}
+@media not print and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+  color-scheme: dark;
+  /* superfícies, texto, linhas (§2.1) */
+  --c-ink: #0a1226; --c-panel: #131d38; --c-panel-2: #1b2750;
+  --c-fg: #eef2fb; --c-muted: #a9b6da; --c-line: #7083bf; --c-line-soft: #2a3a6b; --c-scrim: rgb(3 7 18 / 0.80);
+  /* marca e ação (§2.2) */
+  --c-primary: #3555c0; --c-on-primary: #ffffff; --c-primary-edge: #8fa6e9; --c-primary-fg: #9db4f5;
+  --c-primary-soft: #1a2a5e; --c-primary-soft-fg: #c9d6fb; --c-strong: #26356f; --c-on-strong: #eef2fb;
+  /* estado (§2.3) */
+  --c-danger-fg: #ffb4b4; --c-danger-soft: #3a1217; --c-danger-soft-fg: #ffc9c9;
+  --c-ok-fg: #8ee8ae; --c-ok-soft: #0f2e1c; --c-ok-soft-fg: #a7f0c0;
+  --c-warn-fg: #fcd34d; --c-warn-soft: #3a2a08; --c-warn-soft-fg: #fcd98a;
+  --c-info-soft: #0c2a40; --c-info-soft-fg: #b6e1fb;
+  --c-accent: #e5383b; /* vermelho da marca: só identidade (filete do logo) */
+  /* escala brand: só os tons de fundo suave, texto sobre eles e sólidos levantados (§4.2) */
+  --color-brand-50: #14204a; --color-brand-100: #1a2a5e; --color-brand-200: #24397a;
+  --color-brand-600: #3555c0; --color-brand-700: #2d49a8; --color-brand-800: #c9d6fb; --color-brand-900: #dbe4f9;
+  /* tintas do Tailwind usadas como fundo suave / texto sobre fundo suave (§4.2). Sólidos (red-700, green-700,
+     amber-500, orange-500, yellow-400, slate-500) NÃO se redefinem. */
+  --color-red-50: #2a0f13; --color-red-100: #3a1217; --color-red-200: #5a1c22; --color-red-800: #ffc9c9; --color-red-900: #ffdcdc;
+  --color-green-50: #0b2416; --color-green-100: #0f2e1c; --color-green-200: #174a2c; --color-green-800: #a7f0c0; --color-green-900: #c7f7d9;
+  --color-amber-50: #2b1e05; --color-amber-100: #3a2a08; --color-amber-200: #5a400c; --color-amber-700: #fcd34d; --color-amber-800: #fcd98a; --color-amber-900: #fde7b0;
+  --color-slate-50: #172346; --color-slate-100: #1b2750; --color-slate-200: #26356a; --color-slate-600: #b8c4e4; --color-slate-700: #c9d3ee; --color-slate-800: #dbe3f6; --color-slate-900: #eef2fb;
+  --color-sky-100: #0c2a40; --color-sky-900: #b6e1fb;
+  --color-yellow-50: #2b2305; --color-yellow-100: #3a2d06; --color-yellow-900: #fde68a; /* v1.1: yellow-400 (aro) e yellow-500 (sólido) NÃO mudam */
+  --viz-1: #5c78d8; --viz-2: #d95926; --viz-3: #199e70; --viz-4: #c98500; --viz-5: #d55181; --viz-6: #008300; --viz-7: #9085e9; --viz-8: #e66767;
+  --viz-ord-1: #3555c0; --viz-ord-2: #5c78d8; --viz-ord-3: #8fa6e9; --viz-ord-4: #dbe4f9;
+  --viz-track: #1b2750; --viz-grid: #2a3a6b; --viz-warn-mark: #fcd34d;
+  --viz-outros: #8792b8; --viz-zona-atencao: #fcd34d;
+  }
+}
+/* variante dark: do Tailwind amarrada ao atributo (e não ao prefers-color-scheme), para respeitar a escolha manual */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+html, body { height: 100%; }
+html { scrollbar-gutter: stable; }
+:root[data-theme="dark"] ::placeholder { color: var(--c-muted); opacity: 1; }
+
+/*
+ * Escopo KIOSK: estas regras valem só dentro de <div data-app="kiosk"> (totem e Kanban do técnico).
+ * Rotas /admin (desktop, mouse+teclado) NÃO herdam seleção bloqueada, touch-action nem o tema escuro.
+ */
+html:has([data-app="kiosk"]) { @apply bg-ink; overscroll-behavior: none; }
+
+[data-app="kiosk"] {
+  min-height: 100dvh;
+  @apply bg-ink text-fg;
+  /* sem seleção de texto, sem zoom por duplo toque, sem pull-to-refresh */
+  user-select: none;
+  touch-action: manipulation;
+  overscroll-behavior: none;
+}
+[data-app="kiosk"] :is(button, a, [role="button"], summary, select):not(:disabled) { cursor: pointer; }
+/* foco: azul da marca com halo branco (visível sobre fundo claro e sobre botões azuis) */
+[data-app="kiosk"] button:focus-visible,
+[data-app="kiosk"] input:focus-visible,
+[data-app="kiosk"] a:focus-visible { outline: 4px solid #1438a3; outline-offset: 2px; box-shadow: 0 0 0 7px #fff; }
+[data-theme="dark"] [data-app="kiosk"] :is(button, a, input):focus-visible { outline: 4px solid #fde047; outline-offset: 2px; box-shadow: none; }
+[data-app="kiosk"] button:active:not(:disabled) { transform: scale(0.97); }
+[data-app="kiosk"] button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Escopo ADMIN (desktop, mouse+teclado): tema claro Apex Industrial Technologies, sem as travas de toque do totem. */
+html:has([data-app="admin"]) { @apply bg-ink; }
+[data-app="admin"] { min-height: 100dvh; @apply bg-ink text-fg; }
+[data-app="admin"] :focus-visible { outline: 3px solid #1438a3; outline-offset: 2px; }
+[data-theme="dark"] [data-app="admin"] :focus-visible { outline: 3px solid #fde047; outline-offset: 2px; }
+[data-app="admin"] :is(button, a, [role="button"], summary, select):not(:disabled) { cursor: pointer; }
+[data-app="admin"] :is(button, input, select, textarea):disabled { cursor: not-allowed; }
+[data-app="kiosk"] [role="button"]:focus-visible { outline: 4px solid #1438a3; outline-offset: 2px; box-shadow: 0 0 0 7px #fff; }
+[data-theme="dark"] [data-app="kiosk"] [role="button"]:focus-visible { outline: 4px solid #fde047; outline-offset: 2px; box-shadow: none; }
+[data-app="admin"] button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes pop { 0% { transform: scale(0.4); opacity: 0; } 70% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* Dashboard: pontos focáveis dos gráficos SVG (foco visível; amarelo no escuro) */
+.viz-foco:focus-visible { outline: 3px solid #1438a3; outline-offset: -3px; }
+[data-theme="dark"] .viz-foco:focus-visible { outline-color: #fde047; }
+
+/* Modo TV (Dashboard): sem controles interativos secundários; sem rolagem da página enquanto ativo */
+html:has([data-tv]) { overflow: hidden; }
+[data-tv] details, [data-tv] .tv-oculto { display: none; }
+.fluxo-area { min-height: 300px; }
+[data-tv] .fluxo-area { min-height: 205px; }
+[data-tv] .grade-painel { gap: .75rem; }
+
+/* Fase 33: tabela vira lista de cartões em < 768 px (RN-59). Cada <td> traz data-rotulo; o cabeçalho fica só para leitores de tela. */
+@media (max-width: 767.98px) {
+  .tabela-cartoes { min-width: 0 !important; }
+  .tabela-cartoes thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .tabela-cartoes, .tabela-cartoes tbody, .tabela-cartoes tr, .tabela-cartoes td { display: block; width: 100%; }
+  .tabela-cartoes tr { padding: 0.5rem 0.75rem; }
+  .tabela-cartoes td { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 0.25rem 0 !important; text-align: right !important; white-space: normal !important; overflow-wrap: anywhere; }
+  .tabela-cartoes td[data-rotulo]::before { content: attr(data-rotulo); flex-shrink: 0; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--c-muted); text-align: left; }
+}
+/* Entradas de texto >= 16 px: evita o zoom automático do iOS ao focar */
+@layer base { input, select, textarea { font-size: max(16px, 1em); } }
+
+/* Modo TV executivo: o cursor some após 3 s sem movimento */
+.tv-sem-cursor, .tv-sem-cursor * { cursor: none !important; }
+
+/* ---------- Impressão da ficha da OM: UMA folha A4 retrato, centralizada ----------
+   A ficha vive dentro de um diálogo `fixed` com rolagem: impresso assim, só caberia uma página e cortaria as bordas. Em papel,
+   escondemos tudo o que não leva à ficha, soltamos os ancestrais do posicionamento/rolagem, reduzimos a escala (rem) e juntamos
+   frente e verso num fluxo só (sem quebra de página). Área útil: 190 × 277 mm (A4 menos 10 mm de margem). */
+@page { size: A4 portrait; margin: 10mm; }
+@media print {
+  /* Os clamp() fluidos não podem vazar para o papel (RN-68). */
+  :root { --text-body: 10pt; --text-lead: 10pt; --text-title: 12pt; --text-hero: 14pt; --text-tv: 10pt; }
+  html { font-size: 9.5px; }
+  html, body { background: #fff !important; height: auto !important; overflow: visible !important; margin: 0 !important; }
+  body :not(.ficha-impressao):not(.ficha-impressao *):not(:has(.ficha-impressao)) { display: none !important; }
+  body :has(.ficha-impressao) {
+    position: static !important; inset: auto !important; overflow: visible !important; height: auto !important; max-height: none !important;
+    display: block !important; margin: 0 !important; padding: 0 !important; transform: none !important; background: #fff !important;
+  }
+  .ficha-impressao { display: flex !important; flex-direction: column; gap: 2mm !important; width: 190mm !important; max-width: 190mm !important; margin: 0 auto !important; }
+  .ficha-impressao > section { box-shadow: none !important; --tw-ring-shadow: 0 0 #0000 !important; --tw-shadow: 0 0 #0000 !important; margin: 0 !important; break-before: auto !important; page-break-before: auto !important; }
+  .ficha-impressao * { -webkit-print-color-adjust: exact; print-color-adjust: exact; overflow: visible !important; }
+  .ficha-impressao table { min-width: 0 !important; width: 100% !important; table-layout: auto; }
+  .ficha-impressao tr, .ficha-impressao h3, .ficha-impressao caption { break-inside: avoid; }
+  .ficha-impressao .f-cel, .ficha-impressao .f-th { padding: 1mm 1.5mm !important; }
+  .ficha-impressao .f-td { padding: 0.5mm 1.5mm !important; height: 5.5mm !important; }
+  .ficha-impressao .f-mt { margin-top: 1.5mm !important; }
+  .ficha-impressao .extra-print { display: none !important; }
+  .ficha-impressao td, .ficha-impressao th { word-break: break-word; }
+}
+
+/* Fase 36 / US-20 / RN-83 (defesa em profundidade, camada L2): o indicador e o overlay de dev do Next vivem no Shadow DOM de <nextjs-portal>;
+   só o host é alcançável por CSS global. Efeito colateral aceito: também some o overlay de erro do Next em desenvolvimento (use o terminal). */
+nextjs-portal,
+#nextjs-dev-overlay,
+[data-nextjs-dev-tools-button],
+[data-next-badge-root],
+[data-nextjs-dev-overlay],
+[data-nextjs-toast] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}

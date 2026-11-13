@@ -1,0 +1,151 @@
+name: ordens-manutencao
+
+# Monorepo: apps/web (Next.js) e apps/api (Fastify + Prisma). Cada app tem seu proprio package-lock.
+# Uso:  JWT_SECRET=<min. 32 chars> docker compose up   (ou defina no .env da raiz)
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: om-db
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-om_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-troque_esta_senha}
+      POSTGRES_DB: ${POSTGRES_DB:-ordens_manutencao}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - om-net
+
+  # Runner OFICIAL de migrations. Fonte unica: ./db/migrations (V*.sql).
+  # One-shot e idempotente (tabela schema_migrations); roda a cada "up" e a api so sobe apos sucesso.
+  # Manual: docker compose run --rm migrate
+  migrate:
+    image: postgres:16-alpine
+    container_name: om-migrate
+    restart: "no"
+    entrypoint: ["sh", "/db/migrate.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-om_user}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-troque_esta_senha}
+      PGDATABASE: ${POSTGRES_DB:-ordens_manutencao}
+      MIGRATIONS_DIR: /db/migrations
+      SEED_PORTFOLIO: ${SEED_PORTFOLIO:-true}
+    volumes:
+      - ./db:/db:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - om-net
+
+  api:
+    image: node:20-alpine
+    container_name: om-api
+    security_opt:
+      - no-new-privileges:true
+    working_dir: /app/apps/api
+    # postinstall do app executa "prisma generate"; dev = "tsx watch src/server.ts"
+    command: sh -c "npm install && npm run dev"
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER:-om_user}:${POSTGRES_PASSWORD:-troque_esta_senha}@db:5432/${POSTGRES_DB:-ordens_manutencao}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,https://localhost:3000,http://localhost:3800,https://localhost:3800}
+      # Obrigatorio (min. 32 caracteres). Valor padrao SOMENTE para dev local.
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-0123456789abcdef}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-5m}
+      TRUST_PROXY: "false"
+      # HTTPS opcional (caminhos DENTRO do container; ex.: /certs/key.pem).
+      SSL_KEY_PATH: ${SSL_KEY_PATH:-/certs/key.pem}
+      SSL_CERT_PATH: ${SSL_CERT_PATH:-/certs/cert.pem}
+      # Sessao de totem (Device ID). Vazios = sem restricao; ver apps/api/.env.example
+      TOTENS_AUTORIZADOS: ${TOTENS_AUTORIZADOS:-}
+      TOTEM_OBRIGATORIO_PERFIS: ${TOTEM_OBRIGATORIO_PERFIS:-}
+      TOTEM_PERFIS_PERMITIDOS: ${TOTEM_PERFIS_PERMITIDOS:-OPERADOR,LIDER_PRODUCAO,ADMIN}
+      # Fase 34: outbox transacional de e-mail (false = fila em memória, rollback rápido)
+      OUTBOX_EMAIL_MAX_TENTATIVAS: ${OUTBOX_EMAIL_MAX_TENTATIVAS:-6}
+      OUTBOX_EMAIL_LOTE: ${OUTBOX_EMAIL_LOTE:-10}
+      OUTBOX_EMAIL_LEASE_SEG: ${OUTBOX_EMAIL_LEASE_SEG:-120}
+      OUTBOX_EMAIL_POLL_SEG: ${OUTBOX_EMAIL_POLL_SEG:-30}
+      OUTBOX_EMAIL_CONCORRENCIA: ${OUTBOX_EMAIL_CONCORRENCIA:-2}
+      OUTBOX_EMAIL_SHUTDOWN_SEG: ${OUTBOX_EMAIL_SHUTDOWN_SEG:-20}
+      FICHA_PDF_TIMEOUT_MS: ${FICHA_PDF_TIMEOUT_MS:-10000}
+      OUTBOX_EMAIL_ANEXO_MAX_KB: ${OUTBOX_EMAIL_ANEXO_MAX_KB:-200}
+      EMAIL_REMETENTE_NOME: ${EMAIL_REMETENTE_NOME:-Apex Industrial Technologies · CMMS}
+      ADMIN_SESSAO_TTL_S: ${ADMIN_SESSAO_TTL_S:-43200}
+    ports:
+      - "${API_PORT:-4000}:4000"
+    stop_grace_period: 30s
+    volumes:
+      - ./apps/api:/app/apps/api
+      - ./certs:/certs:ro # certificado autoassinado; ativar com SSL_KEY_PATH=/certs/key.pem SSL_CERT_PATH=/certs/cert.pem
+      - api_node_modules:/app/apps/api/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health/ready || wget --no-check-certificate -qO- https://127.0.0.1:4000/health/ready || wget -qO- http://127.0.0.1:4000/health || wget --no-check-certificate -qO- https://127.0.0.1:4000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    networks:
+      - om-net
+
+  web:
+    image: node:20-alpine
+    container_name: om-web
+    security_opt:
+      - no-new-privileges:true
+    working_dir: /app/apps/web
+    # dev = "next dev -H 0.0.0.0 -p 3000"
+    command: sh -c "npm install && npm run dev"
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      WATCHPACK_POLLING: "true"
+      # Aceitar conexoes internas com certificado autoassinado (Next SSR -> Fastify)
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      # URL da API vista pelo NAVEGADOR (host)
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://localhost:4000}
+      NEXT_PUBLIC_TOTEM_ID: ${NEXT_PUBLIC_TOTEM_ID:-TOTEM-01}
+      # URL da API vista pelo servidor Next (rede do compose)
+      API_INTERNAL_URL: ${API_INTERNAL_URL:-https://api:4000}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+      - "${WEB_PORT_ALT:-3800}:3000"
+    stop_grace_period: 15s
+    volumes:
+      - ./apps/web:/app/apps/web
+      - ./certs:/certs:ro
+      - web_node_modules:/app/apps/web/node_modules
+      - web_next:/app/apps/web/.next
+    depends_on:
+      - api
+    networks:
+      - om-net
+
+volumes:
+  pgdata:
+  api_node_modules:
+  web_node_modules:
+  web_next:
+
+networks:
+  om-net:
+    driver: bridge
